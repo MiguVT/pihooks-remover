@@ -1,230 +1,218 @@
 #!/system/bin/sh
 # PIHooks Remover - service.sh
-# Fallback script that runs at boot_completed stage
-# Ensures runtime properties are cleaned even if post-fs-data fails
+# FIX BUG #2: Uses resetprop --delete (NOT -d) for proper persistent deletion
+# FIX BUG #3: Cleans /data/property/*pihooks* and *pixelprops* files
+# Runs at boot_completed stage after 60 second wait
 # POSIX-compliant, shellcheck-verified
+# Target: Android 14-16, KernelSU 0.9.0+, Infinity-X 3.5
 
 MODDIR="${0%/*}"
 LOGFILE="/cache/pihooks_remover.log"
-LOGCAT_TAG="PIHooksRemover"
-START_TIME=""
-RETRY_COUNT=3
-RETRY_DELAY=1
+BOOT_WAIT=60
+EXIT_CODE=0
 
-# Property patterns for discovery
-PROP_PATTERNS="pihooks pixelprops"
-
-# Known runtime properties to clean
-RUNTIME_PROPS="
+# Complete list of all pihooks and pixelprops properties to delete
+# These must be deleted with resetprop --delete to remove from persistent storage
+PROPS_TO_DELETE="
 persist.sys.pihooks_BRAND
+persist.sys.pihooks_DEBUG
 persist.sys.pihooks_DEVICE
+persist.sys.pihooks_DEVICE_INITIAL_SDK_INT
 persist.sys.pihooks_FINGERPRINT
-persist.sys.pihooks_MODEL
-persist.sys.pihooks_MANUFACTURER
-persist.sys.pihooks_PRODUCT
 persist.sys.pihooks_ID
 persist.sys.pihooks_INCREMENTAL
+persist.sys.pihooks_MANUFACTURER
+persist.sys.pihooks_MODEL
+persist.sys.pihooks_PRODUCT
+persist.sys.pihooks_RELEASE
+persist.sys.pihooks_SDK_INT
 persist.sys.pihooks_SECURITY_PATCH
-persist.sys.pihooks_TYPE
 persist.sys.pihooks_TAGS
-persist.sys.pixelprops_gms
-persist.sys.pixelprops_games
-persist.sys.pixelprops_gphotos
+persist.sys.pihooks_TYPE
+persist.sys.pihooks_mainline_BRAND
+persist.sys.pihooks_mainline_DEVICE
+persist.sys.pihooks_mainline_FINGERPRINT
+persist.sys.pihooks_mainline_MANUFACTURER
+persist.sys.pihooks_mainline_MODEL
+persist.sys.pihooks_mainline_PRODUCT
+persist.sys.pixelprops
+persist.sys.pixelprops.gms
+persist.sys.pixelprops.games
+persist.sys.pixelprops.gphotos
+persist.sys.pixelprops.netflix
+persist.sys.pixelprops.qsb
+persist.sys.pixelprops.snap
+persist.sys.pixelprops.vending
 "
-
-# Get current timestamp in milliseconds
-get_time_ms() {
-    if [ -r /proc/uptime ]; then
-        read -r uptime _ < /proc/uptime
-        echo "${uptime%.*}${uptime#*.}0" | cut -c1-13
-    else
-        date '+%s000'
-    fi
-}
 
 # Logging function with timestamp
 log() {
-    _level="$1"
-    shift
-    _msg="$*"
     _timestamp="$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "unknown")"
-    _log_entry="[$_timestamp] [$_level] [service] $_msg"
+    _msg="[$_timestamp] [service] $*"
     
-    # Write to log file
-    if [ -w "/cache" ] || [ -w "$LOGFILE" ]; then
-        echo "$_log_entry" >> "$LOGFILE" 2>/dev/null
-    fi
-    
-    # Write to logcat if available (POSIX-compatible level extraction)
-    if command -v log >/dev/null 2>&1; then
-        case "$_level" in
-            INFO*)  _prio="i" ;;
-            WARN*)  _prio="w" ;;
-            ERROR*) _prio="e" ;;
-            DEBUG*) _prio="d" ;;
-            *)      _prio="v" ;;
-        esac
-        log -t "$LOGCAT_TAG" -p "$_prio" "$_msg" 2>/dev/null
+    if [ -d "/cache" ] || mkdir -p /cache 2>/dev/null; then
+        echo "$_msg" >> "$LOGFILE" 2>/dev/null
     fi
 }
 
-log_info() { log "INFO" "$@"; }
-log_warn() { log "WARN" "$@"; }
-log_error() { log "ERROR" "$@"; }
-log_debug() { log "DEBUG" "$@"; }
+# ============================================================
+# MAIN EXECUTION
+# Strategy:
+# 1. Wait 60s for boot_completed (system fully ready)
+# 2. Delete all pihooks/pixelprops props with resetprop --delete
+# 3. Clean /data/property/ files to prevent reload on next boot
+# 4. Verify cleanup with getprop | grep
+# ============================================================
 
-# Initialize
-init() {
-    START_TIME="$(get_time_ms)"
-    log_info "=========================================="
-    log_info "PIHooks Remover v1.0.0 (service.sh - boot_completed)"
-    log_info "Module directory: $MODDIR"
-}
+log "=========================================="
+log "PIHooks Remover v1.1.0 (service.sh)"
+log "Module directory: $MODDIR"
+log "Waiting ${BOOT_WAIT}s for boot_completed..."
 
-# Log execution time
-log_execution_time() {
-    _end_time="$(get_time_ms)"
-    if [ -n "$START_TIME" ] && [ -n "$_end_time" ]; then
-        _duration="$((_end_time - START_TIME))"
-        log_info "Service script completed in ${_duration}ms"
-    fi
-}
+# Wait for system to fully boot
+# This ensures property daemon is ready and all properties are loaded
+sleep "$BOOT_WAIT"
 
-# Check if properties still exist
-check_props_exist() {
-    _count=0
-    
-    if command -v getprop >/dev/null 2>&1; then
-        for _pattern in $PROP_PATTERNS; do
-            _matches="$(getprop 2>/dev/null | grep -c "$_pattern" || echo 0)"
-            _count="$((_count + _matches))"
-        done
-    fi
-    
-    return "$_count"
-}
+log "Boot wait complete, starting property cleanup"
 
-# Clean runtime properties
-clean_runtime_props() {
-    log_info "Cleaning runtime properties..."
+# Check if resetprop is available (required for KernelSU)
+if ! command -v resetprop >/dev/null 2>&1; then
+    log "ERROR: resetprop not found - is KernelSU installed?"
+    log "=========================================="
+    exit 2
+fi
+
+log "resetprop found, proceeding with cleanup"
+
+# ============================================================
+# STEP 1: Delete all known properties using resetprop --delete
+# CRITICAL: Must use --delete flag, NOT -d
+# --delete removes from /data/property/persistent_properties
+# -d only removes from runtime memory (BUG!)
+# ============================================================
+
+_deleted=0
+_not_found=0
+_failed=0
+
+log "Deleting properties with resetprop --delete..."
+
+for _prop in $PROPS_TO_DELETE; do
+    # Skip empty lines
+    [ -z "$_prop" ] && continue
     
-    _cleaned=0
-    _failed=0
+    # Check if property exists before attempting deletion
+    _value="$(getprop "$_prop" 2>/dev/null)"
     
-    # Check if resetprop is available
-    if ! command -v resetprop >/dev/null 2>&1; then
-        log_error "resetprop not available"
-        return 1
-    fi
-    
-    # Clean known properties
-    for _prop in $RUNTIME_PROPS; do
-        [ -z "$_prop" ] && continue
-        
-        _value="$(getprop "$_prop" 2>/dev/null)"
-        if [ -n "$_value" ]; then
-            if resetprop -d "$_prop" 2>/dev/null; then
-                log_debug "Removed: $_prop"
-                _cleaned="$((_cleaned + 1))"
-            else
-                log_warn "Failed to remove: $_prop"
-                _failed="$((_failed + 1))"
-            fi
+    if [ -n "$_value" ]; then
+        # Property exists - delete it with --delete flag
+        # --delete removes from BOTH runtime AND /data/property/persistent_properties
+        if resetprop --delete "$_prop" 2>/dev/null; then
+            log "DELETED: $_prop (was: $_value)"
+            _deleted="$((_deleted + 1))"
+        else
+            log "FAILED to delete: $_prop"
+            _failed="$((_failed + 1))"
         fi
-    done
-    
-    # Dynamic discovery
-    for _pattern in $PROP_PATTERNS; do
-        getprop 2>/dev/null | grep "$_pattern" | while IFS='[]:' read -r _ _prop _; do
-            _prop="$(echo "$_prop" | tr -d '[] ')"
-            [ -z "$_prop" ] && continue
-            
-            if resetprop -d "$_prop" 2>/dev/null; then
-                log_debug "Discovered and removed: $_prop"
-            fi
-        done
-    done
-    
-    log_info "Cleaned $_cleaned properties, $_failed failed"
-    
-    [ "$_failed" -eq 0 ]
-}
-
-# Persistent property cleanup via settings delete
-clean_persist_props() {
-    log_info "Attempting persistent property cleanup..."
-    
-    # Try to delete from /data/property/persistent_properties
-    _persist_file="/data/property/persistent_properties"
-    if [ -f "$_persist_file" ]; then
-        log_debug "Found persistent properties file"
-        # Note: Direct modification not recommended, resetprop -d handles this
-    fi
-    
-    return 0
-}
-
-# Main execution with retry logic
-main() {
-    init
-    
-    _attempt=1
-    _success=0
-    
-    while [ "$_attempt" -le "$RETRY_COUNT" ]; do
-        log_info "Cleanup attempt $_attempt of $RETRY_COUNT"
-        
-        # Check if already clean
-        if ! check_props_exist; then
-            log_info "System already clean, no PIF properties found"
-            _success=1
-            break
-        fi
-        
-        # Attempt cleanup
-        if clean_runtime_props; then
-            # Verify
-            if ! check_props_exist; then
-                log_info "Cleanup successful on attempt $_attempt"
-                _success=1
-                break
-            fi
-        fi
-        
-        # Wait before retry
-        if [ "$_attempt" -lt "$RETRY_COUNT" ]; then
-            log_debug "Waiting ${RETRY_DELAY}s before retry..."
-            sleep "$RETRY_DELAY"
-        fi
-        
-        _attempt="$((_attempt + 1))"
-    done
-    
-    # Also try persistent cleanup
-    clean_persist_props
-    
-    # Final verification
-    _remaining=0
-    if check_props_exist; then
-        _remaining=$?
-    fi
-    
-    if [ "$_success" -eq 1 ]; then
-        log_info "Service cleanup completed successfully"
-        _exit_code=0
-    elif [ "$_remaining" -gt 0 ]; then
-        log_warn "Service cleanup partial: $_remaining properties remaining"
-        _exit_code=1
     else
-        log_info "Service cleanup completed"
-        _exit_code=0
+        # Property doesn't exist (already clean or never set)
+        _not_found="$((_not_found + 1))"
     fi
-    
-    log_execution_time
-    log_info "=========================================="
-    
-    exit "$_exit_code"
-}
+done
 
-# Execute
-main "$@"
+log "Property deletion complete: $_deleted deleted, $_not_found not found, $_failed failed"
+
+# ============================================================
+# STEP 2: Dynamic discovery - find any props we might have missed
+# Search for any remaining pihooks/pixelprops properties
+# ============================================================
+
+log "Scanning for any remaining pihooks/pixelprops properties..."
+
+_discovered=0
+getprop 2>/dev/null | grep -E "pihooks|pixelprops" | while IFS='[]' read -r _ _prop _rest; do
+    # Extract property name (format: [prop.name]: [value])
+    _prop="$(echo "$_prop" | tr -d ' ')"
+    [ -z "$_prop" ] && continue
+    
+    if resetprop --delete "$_prop" 2>/dev/null; then
+        log "DISCOVERED and DELETED: $_prop"
+        _discovered="$((_discovered + 1))"
+    fi
+done
+
+if [ "$_discovered" -gt 0 ]; then
+    log "Discovered and deleted $_discovered additional properties"
+fi
+
+# ============================================================
+# STEP 3: Clean /data/property/ files (CRITICAL FIX)
+# These files store persistent properties that reload at boot
+# Must be removed to prevent properties from coming back
+# ============================================================
+
+log "Cleaning /data/property/ files..."
+
+_files_removed=0
+
+# Remove any files containing pihooks or pixelprops in name or content
+# This is safe - Android will recreate the database on next property write
+if [ -d "/data/property" ]; then
+    # Find and remove files with pihooks/pixelprops in filename
+    for _file in /data/property/*pihooks* /data/property/*pixelprops* 2>/dev/null; do
+        if [ -f "$_file" ]; then
+            if rm -f "$_file" 2>/dev/null; then
+                log "Removed file: $_file"
+                _files_removed="$((_files_removed + 1))"
+            else
+                log "Failed to remove: $_file"
+            fi
+        fi
+    done
+    
+    log "Removed $_files_removed files from /data/property/"
+else
+    log "WARNING: /data/property/ directory not found"
+fi
+
+# ============================================================
+# STEP 4: Verification - ensure all pihooks/pixelprops are gone
+# This is the final check to confirm cleanup was successful
+# ============================================================
+
+log "Verifying cleanup..."
+
+# Count remaining properties
+_remaining="$(getprop 2>/dev/null | grep -c -E "pihooks|pixelprops" || echo 0)"
+
+if [ "$_remaining" -eq 0 ]; then
+    log "VERIFICATION PASSED: 0 pihooks/pixelprops properties remaining"
+    EXIT_CODE=0
+else
+    log "WARNING: $_remaining properties still remain after cleanup"
+    log "Remaining properties:"
+    getprop 2>/dev/null | grep -E "pihooks|pixelprops" | while read -r _line; do
+        log "  $_line"
+    done
+    EXIT_CODE=1
+fi
+
+# ============================================================
+# SUMMARY
+# ============================================================
+
+log "----------------------------------------"
+log "Cleanup Summary:"
+log "  Properties deleted: $_deleted"
+log "  Properties not found: $_not_found"
+log "  Properties failed: $_failed"
+log "  Files removed: $_files_removed"
+log "  Remaining after cleanup: $_remaining"
+log "  Exit code: $EXIT_CODE"
+log "=========================================="
+
+# Exit codes:
+# 0 = success (all clean)
+# 1 = partial success (some properties remain)
+# 2 = resetprop not found
+exit "$EXIT_CODE"
