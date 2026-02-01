@@ -140,7 +140,7 @@ jobs:
       - name: Run shellcheck on build scripts
         run: |
           echo "Running shellcheck on build scripts..."
-          shellcheck -x scripts/*.sh
+          shellcheck -x -s bash scripts/*.sh
           echo "✅ Build scripts passed"
 
   build-test:

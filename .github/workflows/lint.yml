@@ -28,25 +28,30 @@ jobs:
         run: |
           echo "Finding all shell scripts..."
           
-          # Find all .sh files
-          SCRIPTS=$(find . -name "*.sh" -type f | grep -v node_modules | sort)
-          
-          if [ -z "$SCRIPTS" ]; then
-            echo "No shell scripts found"
-            exit 0
-          fi
-          
-          echo "Found scripts:"
-          echo "$SCRIPTS"
-          echo ""
-          
           FAILED=0
           
-          for script in $SCRIPTS; do
+          # Lint module scripts (POSIX sh - runs on Android)
+          echo "Linting module scripts (POSIX sh)..."
+          for script in module/*.sh; do
             echo "----------------------------------------"
-            echo "Checking: $script"
+            echo "Checking: $script (sh)"
             
-            if shellcheck -x "$script"; then
+            if shellcheck -s sh -x "$script"; then
+              echo "✓ PASSED"
+            else
+              echo "✗ FAILED"
+              FAILED=$((FAILED + 1))
+            fi
+          done
+          
+          # Lint build scripts (bash - runs on build machine)
+          echo ""
+          echo "Linting build scripts (bash)..."
+          for script in scripts/*.sh; do
+            echo "----------------------------------------"
+            echo "Checking: $script (bash)"
+            
+            if shellcheck -s bash -x "$script"; then
               echo "✓ PASSED"
             else
               echo "✗ FAILED"
