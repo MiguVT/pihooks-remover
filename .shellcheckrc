@@ -1,0 +1,46 @@
+# ShellCheck configuration for PIHooks Remover
+# https://www.shellcheck.net/wiki/
+
+# Treat scripts as POSIX sh (not bash)
+shell=sh
+
+# Disable specific warnings that don't apply to Android environment
+
+# SC1091: Not following sourced files (Android paths don't exist on build system)
+disable=SC1091
+
+# SC2034: Variable appears unused (we use some for documentation/future use)
+# Note: Enable this during strict audits
+# disable=SC2034
+
+# SC2039: In POSIX sh, certain features are undefined
+# We're careful about this, but Android's sh is usually mksh which supports more
+# disable=SC2039
+
+# SC2086: Double quote to prevent globbing and word splitting
+# We intentionally skip quoting in some cases for property patterns
+# Note: Keep enabled, fix issues instead
+# disable=SC2086
+
+# SC2166: Prefer [ p ] && [ q ] over [ p -a q ]
+# Android's sh handles -a fine, but we'll use && for clarity anyway
+# disable=SC2166
+
+# SC3037: In POSIX sh, echo flags are undefined
+# Android's echo supports -n and -e
+disable=SC3037
+
+# SC3043: In POSIX sh, 'local' is undefined
+# Android's mksh supports local
+disable=SC3043
+
+# SC3057: In POSIX sh, string indexing is undefined
+# We avoid this where possible
+# disable=SC3057
+
+# Enable external sources for testing
+external-sources=true
+
+# Severity: error, warning, info, style
+# Only show warnings and above in CI
+# severity=warning

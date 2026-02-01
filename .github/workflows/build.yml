@@ -1,0 +1,211 @@
+name: Build & Validate
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'module/**'
+      - 'scripts/**'
+      - '.github/workflows/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'module/**'
+      - 'scripts/**'
+      - '.github/workflows/**'
+
+jobs:
+  validate-structure:
+    name: Validate Module Structure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check required files
+        run: |
+          echo "Checking required module files..."
+          
+          REQUIRED_FILES=(
+            "module/module.prop"
+            "module/post-fs-data.sh"
+            "module/service.sh"
+            "module/uninstall.sh"
+            "scripts/build.sh"
+            "scripts/test.sh"
+            "docs/README.md"
+            "docs/CHANGELOG.md"
+            "docs/TECHNICAL.md"
+            ".shellcheckrc"
+            "LICENSE"
+          )
+          
+          MISSING=0
+          for file in "${REQUIRED_FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "::error::Missing required file: $file"
+              MISSING=$((MISSING + 1))
+            else
+              echo "✓ $file"
+            fi
+          done
+          
+          if [ $MISSING -gt 0 ]; then
+            echo "::error::$MISSING required file(s) missing"
+            exit 1
+          fi
+          
+          echo "✅ All required files present"
+
+      - name: Validate module.prop
+        run: |
+          echo "Validating module.prop..."
+          
+          REQUIRED_PROPS=("id" "name" "version" "versionCode" "author" "description")
+          
+          for prop in "${REQUIRED_PROPS[@]}"; do
+            if ! grep -q "^${prop}=" module/module.prop; then
+              echo "::error::Missing required property in module.prop: $prop"
+              exit 1
+            fi
+            
+            # Get value and check it's not empty
+            VALUE=$(grep "^${prop}=" module/module.prop | cut -d'=' -f2-)
+            if [ -z "$VALUE" ]; then
+              echo "::error::Empty value for property: $prop"
+              exit 1
+            fi
+            
+            echo "✓ $prop = $VALUE"
+          done
+          
+          # Validate version format
+          VERSION=$(grep '^version=' module/module.prop | cut -d'=' -f2)
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+            echo "::error::Invalid version format: $VERSION"
+            exit 1
+          fi
+          
+          # Validate versionCode
+          VERSION_CODE=$(grep '^versionCode=' module/module.prop | cut -d'=' -f2)
+          if ! echo "$VERSION_CODE" | grep -qE '^[0-9]+$'; then
+            echo "::error::Invalid versionCode: $VERSION_CODE"
+            exit 1
+          fi
+          
+          # Validate id format (no spaces, lowercase)
+          ID=$(grep '^id=' module/module.prop | cut -d'=' -f2)
+          if ! echo "$ID" | grep -qE '^[a-z][a-z0-9_]*$'; then
+            echo "::error::Invalid module id format: $ID"
+            exit 1
+          fi
+          
+          echo "✅ module.prop validation passed"
+
+      - name: Check script shebangs
+        run: |
+          echo "Checking script shebangs..."
+          
+          for script in module/*.sh; do
+            SHEBANG=$(head -1 "$script")
+            if [ "$SHEBANG" != "#!/system/bin/sh" ]; then
+              echo "::error::Invalid shebang in $script: $SHEBANG (expected: #!/system/bin/sh)"
+              exit 1
+            fi
+            echo "✓ $script"
+          done
+          
+          echo "✅ All shebangs correct"
+
+  lint:
+    name: Lint Scripts
+    runs-on: ubuntu-latest
+    needs: validate-structure
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck on module scripts
+        run: |
+          echo "Running shellcheck on module scripts..."
+          shellcheck -x -s sh module/*.sh
+          echo "✅ Module scripts passed"
+
+      - name: Run shellcheck on build scripts
+        run: |
+          echo "Running shellcheck on build scripts..."
+          shellcheck -x scripts/*.sh
+          echo "✅ Build scripts passed"
+
+  build-test:
+    name: Test Build Process
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: Run build script
+        run: ./scripts/build.sh
+
+      - name: Verify ZIP structure
+        run: |
+          # Find the built ZIP
+          ZIP_FILE=$(ls -1 PIHooks-Remover-*.zip 2>/dev/null | head -1)
+          
+          if [ -z "$ZIP_FILE" ]; then
+            echo "::error::No ZIP file generated"
+            exit 1
+          fi
+          
+          echo "Built: $ZIP_FILE"
+          echo "Size: $(ls -lh "$ZIP_FILE" | awk '{print $5}')"
+          
+          echo ""
+          echo "Contents:"
+          unzip -l "$ZIP_FILE"
+          
+          # Verify critical files
+          REQUIRED_IN_ZIP=("module.prop" "post-fs-data.sh" "service.sh")
+          
+          for file in "${REQUIRED_IN_ZIP[@]}"; do
+            if ! unzip -l "$ZIP_FILE" | grep -q "$file"; then
+              echo "::error::Missing in ZIP: $file"
+              exit 1
+            fi
+          done
+          
+          echo "✅ ZIP structure valid"
+
+      - name: Test ZIP extraction
+        run: |
+          ZIP_FILE=$(ls -1 PIHooks-Remover-*.zip 2>/dev/null | head -1)
+          
+          mkdir -p test_extract
+          unzip -o "$ZIP_FILE" -d test_extract/
+          
+          # Verify files are readable
+          for file in test_extract/*.sh; do
+            if [ ! -r "$file" ]; then
+              echo "::error::Cannot read extracted file: $file"
+              exit 1
+            fi
+          done
+          
+          echo "✅ ZIP extraction test passed"
+
+      - name: Upload test artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-build
+          path: PIHooks-Remover-*.zip
+          retention-days: 1

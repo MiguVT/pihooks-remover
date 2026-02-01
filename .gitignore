@@ -1,0 +1,32 @@
+# Build outputs
+*.zip
+build/
+dist/
+
+# Checksums (generated during release)
+SHA256SUMS.txt
+MD5SUMS.txt
+checksums.txt
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Test outputs
+test_extract/

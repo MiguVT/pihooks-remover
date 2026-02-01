@@ -1,1 +1,1 @@
-# pihooks-remover
+docs/README.md

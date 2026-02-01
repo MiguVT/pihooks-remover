@@ -1,0 +1,7 @@
+id=pihooks_remover
+name=PIHooks Remover
+version=1.0.0
+versionCode=10000
+author=GHOST
+description=Removes PIF/PixelProps properties from Infinity-X and similar ROMs for clean root detection evasion.
+updateJson=https://raw.githubusercontent.com/MiguVT/pihooks-remover/main/update.json

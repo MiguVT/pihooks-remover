@@ -1,0 +1,129 @@
+name: Lint
+
+on:
+  push:
+    paths:
+      - '**.sh'
+      - '.shellcheckrc'
+  pull_request:
+    paths:
+      - '**.sh'
+      - '.shellcheckrc'
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Get shellcheck version
+        run: shellcheck --version
+
+      - name: Lint all shell scripts
+        run: |
+          echo "Finding all shell scripts..."
+          
+          # Find all .sh files
+          SCRIPTS=$(find . -name "*.sh" -type f | grep -v node_modules | sort)
+          
+          if [ -z "$SCRIPTS" ]; then
+            echo "No shell scripts found"
+            exit 0
+          fi
+          
+          echo "Found scripts:"
+          echo "$SCRIPTS"
+          echo ""
+          
+          FAILED=0
+          
+          for script in $SCRIPTS; do
+            echo "----------------------------------------"
+            echo "Checking: $script"
+            
+            if shellcheck -x "$script"; then
+              echo "✓ PASSED"
+            else
+              echo "✗ FAILED"
+              FAILED=$((FAILED + 1))
+            fi
+          done
+          
+          echo "========================================"
+          
+          if [ $FAILED -gt 0 ]; then
+            echo "::error::$FAILED script(s) failed shellcheck"
+            exit 1
+          fi
+          
+          echo "✅ All scripts passed shellcheck"
+
+  posix-compliance:
+    name: POSIX Compliance Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check for bashisms
+        run: |
+          echo "Checking for common bashisms in module scripts..."
+          
+          ISSUES=0
+          
+          for script in module/*.sh; do
+            echo "Checking: $script"
+            
+            # Check for bash-specific syntax
+            BASHISMS=""
+            
+            # [[ ]] instead of [ ]
+            if grep -n '\[\[' "$script"; then
+              BASHISMS="$BASHISMS\n  - Uses [[ ]] (bash-specific)"
+            fi
+            
+            # (( )) arithmetic
+            if grep -n '((' "$script" | grep -v '\$(('; then
+              BASHISMS="$BASHISMS\n  - Uses (( )) arithmetic"
+            fi
+            
+            # function keyword
+            if grep -n '^function ' "$script"; then
+              BASHISMS="$BASHISMS\n  - Uses 'function' keyword"
+            fi
+            
+            # &>> or |&
+            if grep -n '&>>\||&' "$script"; then
+              BASHISMS="$BASHISMS\n  - Uses bash-specific redirections"
+            fi
+            
+            # declare/local -a/-A
+            if grep -n 'declare \|local -[aA]' "$script"; then
+              BASHISMS="$BASHISMS\n  - Uses bash-specific declare/local"
+            fi
+            
+            # here-strings <<<
+            if grep -n '<<<' "$script"; then
+              BASHISMS="$BASHISMS\n  - Uses here-strings <<<"
+            fi
+            
+            if [ -n "$BASHISMS" ]; then
+              echo "::warning::Potential bashisms in $script:$BASHISMS"
+              ISSUES=$((ISSUES + 1))
+            else
+              echo "✓ No obvious bashisms found"
+            fi
+          done
+          
+          if [ $ISSUES -gt 0 ]; then
+            echo ""
+            echo "::warning::Found potential bashisms in $ISSUES file(s)"
+            echo "Review the warnings above to ensure POSIX compliance"
+          fi
+          
+          echo "✅ POSIX compliance check complete"
