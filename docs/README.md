@@ -73,6 +73,7 @@ adb shell cat /data/local/tmp/pihooks_remover.log
 |-----|--------|--------|
 | Infinity-X | Nothing Phone 2 | ✅ Verified |
 | Infinity-X | Nothing Phone 3a | ✅ Verified |
+| Evolution-X UNOFFICIAL | Oneplus 5T | ✅ Verified |
 
 ### Root Solutions
 | Solution | Status |
