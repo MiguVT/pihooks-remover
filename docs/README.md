@@ -11,10 +11,10 @@
 ## 🎯 Features
 
 - **Clean Property Removal**: Removes `persist.sys.pihooks_*` and `persist.sys.pixelprops*` properties
-- **Dual-Stage Execution**: Runs in `post-fs-data` (early boot) with `service.sh` fallback
-- **Multiple Remount Methods**: Tries direct, `/dev/block/mapper`, and bind mount approaches
-- **Runtime Cleanup**: Uses `resetprop -d` for complete runtime property removal
-- **Comprehensive Logging**: Logs to `/data/local/tmp/pihooks_remover.log` and Android logcat
+- **Universal Compatibility**: Works with KernelSU, Magisk, and APatch
+- **Runtime Cleanup**: Uses `resetprop --delete` for complete property removal
+- **Persistent Cleanup**: Cleans `/data/property/` files to prevent property restoration
+- **Comprehensive Logging**: Logs to `/data/local/tmp/pihooks_remover.log`
 - **Idempotent**: Safe to run multiple times without side effects
 - **Fast Execution**: Completes in under 500ms
 
@@ -24,15 +24,7 @@
 - **Android**: 10+ (API 29+)
 - **Architecture**: arm64-v8a, armeabi-v7a, x86_64
 
-### KernelSU Users
-For optimal performance with KernelSU:
-- **Recommended**: Install [meta-overlayfs](https://github.com/backslashxx/ksu-metamodule) metamodule
-- The module works without it, but `meta-overlayfs` provides cleaner OverlayFS integration
-- OverlayFS mode offers better performance and compatibility than traditional bind mounts
-
-### APatch Users
-- APatch support is **experimental** and currently untested
-- Please report compatibility issues on GitHub
+> **Note**: The module uses `resetprop` which is built into all supported root solutions. No additional dependencies required.
 
 ## 🚀 Installation
 
@@ -110,14 +102,10 @@ adb shell cat /data/local/tmp/pihooks_remover.log
    adb shell getprop | grep pihooks
    ```
 
-### System fails to remount
-
-Some ROMs have additional protection. The module will:
-1. Try direct remount
-2. Try `/dev/block/mapper` remount
-3. Fall back to runtime-only cleanup
-
-Runtime cleanup should still work even if `build.prop` cannot be modified.
+4. **Verify resetprop is available:**
+   ```bash
+   adb shell which resetprop
+   ```
 
 ### Bootloop after installation
 
@@ -136,16 +124,12 @@ ROM updates may restore the properties. Simply:
 
 ## 📖 How It Works
 
-1. **post-fs-data.sh** (early boot):
-   - Creates Magic Mount overlay with filtered build.prop files
-   - Removes all `pihooks` and `pixelprops` lines from prop files
-   - KernelSU/Magisk automatically mounts the overlay
-
-2. **service.sh** (boot_completed):
-   - Waits for `sys.boot_completed=1` (smart polling)
-   - Deletes runtime properties with `resetprop --delete`
-   - Cleans `/data/property/` files
-   - Verifies cleanup was successful
+**service.sh** (runs after boot completes):
+1. Waits for `sys.boot_completed=1` (smart polling)
+2. Deletes all known `pihooks` and `pixelprops` properties with `resetprop --delete`
+3. Dynamically discovers any additional matching properties
+4. Cleans `/data/property/` files to prevent restoration on next boot
+5. Verifies cleanup was successful and logs results
 
 See [TECHNICAL.md](TECHNICAL.md) for detailed implementation information.
 

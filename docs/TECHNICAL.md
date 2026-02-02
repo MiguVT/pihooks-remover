@@ -5,9 +5,8 @@ This document provides in-depth technical details about the PIHooks Remover modu
 ## Table of Contents
 
 - [Android Boot Sequence](#android-boot-sequence)
-- [Module Execution Stages](#module-execution-stages)
+- [Module Execution](#module-execution)
 - [Property System](#property-system)
-- [Remount Methods](#remount-methods)
 - [Architecture Decisions](#architecture-decisions)
 - [Error Handling](#error-handling)
 - [Performance Considerations](#performance-considerations)
@@ -28,21 +27,17 @@ Understanding when our scripts execute is crucial:
 │     ↓                                                            │
 │  3. init.rc processing                                           │
 │     ↓                                                            │
-│  4. ┌──────────────────────────────────────────────────────┐    │
-│     │ post-fs-data  ← OUR PRIMARY SCRIPT RUNS HERE         │    │
-│     │ - /data mounted                                       │    │
-│     │ - SELinux enforcing (usually)                         │    │
-│     │ - Properties being loaded                             │    │
-│     └──────────────────────────────────────────────────────┘    │
+│  4. post-fs-data (KernelSU/Magisk hooks active)                 │
 │     ↓                                                            │
 │  5. Zygote starts                                                │
 │     ↓                                                            │
 │  6. System Server                                                │
 │     ↓                                                            │
 │  7. ┌──────────────────────────────────────────────────────┐    │
-│     │ boot_completed  ← OUR FALLBACK SCRIPT RUNS HERE       │    │
+│     │ boot_completed  ← OUR SCRIPT RUNS HERE               │    │
 │     │ - All services started                                │    │
 │     │ - User space fully initialized                        │    │
+│     │ - resetprop available                                 │    │
 │     └──────────────────────────────────────────────────────┘    │
 │     ↓                                                            │
 │  8. Home screen                                                  │
@@ -50,88 +45,39 @@ Understanding when our scripts execute is crucial:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Why post-fs-data?
+### Why boot_completed?
 
-We target `post-fs-data` because:
+We run at `boot_completed` because:
 
-1. **Early execution**: Runs before most system services read properties
-2. **Data access**: `/data` partition is mounted and accessible
-3. **Root available**: KernelSU/Magisk hooks are active
-4. **Before Zygote**: System apps haven't started yet
+1. **System stability**: All services are running and stable
+2. **resetprop available**: The tool is fully functional
+3. **Properties loaded**: All target properties are present
+4. **No race conditions**: Avoids timing issues with early boot
+5. **Reliable cleanup**: Properties won't be overwritten by late services
 
-### Why service.sh as fallback?
+## Module Execution
 
-Some scenarios where `post-fs-data.sh` may not fully succeed:
-
-1. System remount fails due to dm-verity or AVB
-2. SELinux blocks certain operations
-3. Properties are set by late-starting services
-4. Race conditions during early boot
-
-## Module Execution Stages
-
-### Execution Flow Overview
+### Execution Flow
 
 ```
 Boot Start
     ↓
-post-fs-data.sh (Phase 1 - Early Boot)
+... (system initialization) ...
+    ↓
+sys.boot_completed=1
+    ↓
+service.sh (Property Cleanup)
     ├─ Detect root solution (KernelSU/Magisk/APatch)
-    ├─ For each partition (/system, /vendor, /product, etc.):
-    │   ├─ Read build.prop
-    │   ├─ Filter out pihooks/pixelprops lines
-    │   └─ Write overlay to $MODDIR/system/build.prop
-    ├─ Runtime cleanup with resetprop --delete
+    ├─ Wait for boot_completed signal
+    ├─ Delete all known pihooks/pixelprops properties
+    ├─ Dynamically discover additional properties
+    ├─ Clean /data/property/ persistence files
     └─ Verify and log results
-    ↓
-post-mount.sh (Phase 1.5 - KernelSU Only)
-    ├─ Runs after OverlayFS mount
-    ├─ Verify overlay is active
-    └─ Log verification status
-    ↓
-service.sh (Phase 2 - Boot Completed Fallback)
-    ├─ Wait for sys.boot_completed=1
-    ├─ Scan for any remaining properties
-    ├─ Delete with resetprop --delete
-    ├─ Clean /data/property/ files
-    └─ Final verification
     ↓
 Boot Complete (Properties Removed)
 ```
 
-### post-fs-data.sh (Overlay Approach)
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    post-fs-data.sh Flow                      │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  START                                                       │
-│    ↓                                                         │
-│  Initialize logging & timing                                 │
-│    ↓                                                         │
-│  Detect root solution (KernelSU/Magisk/APatch)              │
-│    ↓                                                         │
-│  ┌─────────────────────────────────────────────────────────┐│
-│  │ Create Magic Mount Overlay:                             ││
-│  │  1. Read each build.prop (/system, /vendor, etc.)       ││
-│  │  2. Filter out pihooks/pixelprops lines (grep -v)       ││
-│  │  3. Write filtered version to $MODDIR/system/...        ││
-│  │  4. Set permissions and SELinux context                 ││
-│  └─────────────────────────────────────────────────────────┘│
-│    ↓                                                         │
-│  Root solution mounts overlay automatically                 │
-│    ↓                                                         │
-│  Verify cleanup                                              │
-│    ↓                                                         │
-│  Log execution time                                          │
-│    ↓                                                         │
-│  EXIT (0=success, 1=partial, 2=fail)                        │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### service.sh
+### service.sh Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -140,23 +86,34 @@ Boot Complete (Properties Removed)
 │                                                              │
 │  START                                                       │
 │    ↓                                                         │
-│  Initialize logging                                          │
+│  Initialize logging & timing                                 │
 │    ↓                                                         │
-│  Check if properties exist                                   │
+│  Detect root solution                                        │
 │    ↓                                                         │
-│  If clean → EXIT 0                                           │
+│  Wait for sys.boot_completed=1 (max 120s timeout)           │
+│    ↓                                                         │
+│  Check resetprop availability                                │
 │    ↓                                                         │
 │  ┌─────────────────────────────────────────────────────────┐│
-│  │ Retry Loop (max 3 attempts):                            ││
-│  │  1. Clean known runtime properties                      ││
-│  │  2. Dynamic discovery via getprop                       ││
-│  │  3. Verify cleanup                                      ││
-│  │  4. Sleep 1s if not clean                               ││
+│  │ Delete Known Properties:                                ││
+│  │  - persist.sys.pihooks_*                                ││
+│  │  - persist.sys.pixelprops*                              ││
+│  │  - ro.pihooks.* / ro.pixelprops.*                       ││
 │  └─────────────────────────────────────────────────────────┘│
 │    ↓                                                         │
-│  Final verification                                          │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ Dynamic Discovery:                                      ││
+│  │  - Scan getprop output for remaining properties         ││
+│  │  - Delete any discovered properties                     ││
+│  └─────────────────────────────────────────────────────────┘│
 │    ↓                                                         │
-│  EXIT                                                        │
+│  Clean /data/property/ files                                │
+│    ↓                                                         │
+│  Verify cleanup (count remaining)                           │
+│    ↓                                                         │
+│  Log summary & execution time                               │
+│    ↓                                                         │
+│  EXIT (0=success, 1=partial, 2=resetprop missing)           │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -169,9 +126,9 @@ Android has several property types:
 
 | Type | Location | Persistence | Our Approach |
 |------|----------|-------------|--------------|
-| Build props | `/system/build.prop` | Survives reboot | `sed -i` removal |
-| Persist props | `/data/property/` | Survives reboot | `resetprop -d` |
-| Runtime props | Memory only | Lost on reboot | `resetprop -d` |
+| Build props | `/system/build.prop` | Survives reboot | Not modified (read-only) |
+| Persist props | `/data/property/` | Survives reboot | `resetprop --delete` + file cleanup |
+| Runtime props | Memory only | Lost on reboot | `resetprop --delete` |
 
 ### Target Properties
 
@@ -196,61 +153,27 @@ persist.sys.pixelprops_gphotos
 
 ### resetprop
 
-`resetprop` is a Magisk/KernelSU utility that can:
+`resetprop` is a Magisk/KernelSU/APatch utility that can:
 
-- `-d`: Delete a property completely
+- `--delete` or `-d`: Delete a property completely (both runtime and persistent)
 - Set properties without triggering property_service
 - Modify read-only properties
 
 ```bash
-# Delete a property
-resetprop -d persist.sys.pihooks_BRAND
+# Delete a property (removes from runtime AND /data/property/)
+resetprop --delete persist.sys.pihooks_BRAND
 
 # The property is now completely removed from the system
 ```
 
-## Remount Methods
+### Why resetprop is Sufficient
 
-### Method 1: Direct Remount
+The `resetprop --delete` command:
+1. Removes the property from runtime memory
+2. Removes the property from `/data/property/persistent_properties`
+3. Prevents the property from being restored on reboot
 
-```bash
-mount -o remount,rw /system
-```
-
-Works on:
-- Older devices without dm-verity
-- Some A-only partition schemes
-
-### Method 2: Device Mapper
-
-```bash
-mount -o remount,rw /dev/block/mapper/system /system
-```
-
-Works on:
-- A/B devices with device mapper
-- Devices with dynamic partitions
-
-### Method 3: Block Device
-
-```bash
-# Find the block device
-BLOCK=$(grep ' /system ' /proc/mounts | cut -d' ' -f1)
-mount -o remount,rw "$BLOCK" /system
-```
-
-Works on:
-- Various partition schemes
-- When device mapper path differs
-
-### Method 4: Bind Mount (Fallback)
-
-When all remount methods fail:
-1. Copy build.prop to `/cache`
-2. Modify the copy
-3. Use runtime property removal only
-
-This is a degraded mode but still functional.
+This makes overlay-based approaches (modifying build.prop) redundant for our use case.
 
 ## Architecture Decisions
 
@@ -360,7 +283,7 @@ Optimizations:
 
 ### I/O Minimization
 
-- Single read of build.prop
+- Single pass property deletion
 - Batched property operations
 - Log buffering (OS-level)
 
@@ -369,91 +292,85 @@ Optimizations:
 ### Root Requirement
 
 This module requires root because:
-- Modifying system partition
-- Using resetprop
-- Accessing protected files
+- Using resetprop (root-only utility)
+- Accessing /data/property/ (protected directory)
+- Modifying persistent properties
 
-### Backup Strategy
+### No System Modifications
 
-```bash
-# Create backup before modification
-if [ ! -f "${BUILD_PROP}.pihooks_backup" ]; then
-    cp "$BUILD_PROP" "${BUILD_PROP}.pihooks_backup"
-fi
-```
-
-- Only one backup (prevents accumulation)
-- Restored on uninstall
-- Preserves original state
+Unlike overlay-based approaches, this module:
+- Does NOT modify /system partition
+- Does NOT require remounting filesystems
+- Does NOT create backups (nothing to restore)
+- Only removes properties, never adds or modifies
 
 ### SELinux Compatibility
 
 The module works within SELinux constraints:
-- Uses standard mount operations
+- Uses resetprop which handles SELinux contexts
 - Doesn't require policy modifications
-- KernelSU/Magisk handle context
+- KernelSU/Magisk/APatch handle permissions
 
 ## File Structure
 
 ```
 /data/adb/modules/pihooks_remover/
 ├── module.prop          # Module metadata
-├── post-fs-data.sh      # Primary script (early boot)
-├── service.sh           # Fallback script (boot_completed)
+├── customize.sh         # Installation script
+├── service.sh           # Property cleanup (boot_completed)
 └── uninstall.sh         # Cleanup on removal
 
-/cache/
+/data/local/tmp/
 └── pihooks_remover.log  # Persistent log file
-
-/system/
-└── build.prop           # Target file (modified)
-    └── build.prop.pihooks_backup  # Backup (if created)
 ```
 
 ## Debugging
 
-### Enable Verbose Logging
-
-Edit `post-fs-data.sh`:
-```bash
-# Change log level threshold
-LOG_LEVEL="DEBUG"  # INFO, WARN, ERROR, DEBUG
-```
-
-### Monitor in Real-time
+### Monitor Logs
 
 ```bash
-# Watch log file
-adb shell tail -f /cache/pihooks_remover.log
+# View log file
+adb shell cat /data/local/tmp/pihooks_remover.log
 
-# Watch logcat
-adb logcat -s PIHooksRemover:V
+# Watch log file in real-time
+adb shell tail -f /data/local/tmp/pihooks_remover.log
 ```
 
 ### Manual Execution
 
 ```bash
-# Run post-fs-data manually
-adb shell sh /data/adb/modules/pihooks_remover/post-fs-data.sh
+# Run service.sh manually
+adb shell sh /data/adb/modules/pihooks_remover/service.sh
 
 # Check exit code
 echo $?
+
+# Verify properties are gone
+adb shell getprop | grep -E "pihooks|pixelprops"
+```
+
+### Check resetprop Availability
+
+```bash
+adb shell which resetprop
+adb shell resetprop --help
 ```
 
 ## Contributing
 
 ### Code Style
 
-- 4-space indentation
+- 2-space indentation
 - Meaningful variable names with `_` prefix for locals
-- Function comments
+- Function comments for complex logic only
 - Defensive error handling
 
 ### Testing Checklist
 
 - [ ] ShellCheck passes
-- [ ] Works on A/B device
-- [ ] Works on A-only device
+- [ ] Works with KernelSU
+- [ ] Works with Magisk
+- [ ] Works with APatch (if possible)
 - [ ] No bootloop on target devices
 - [ ] Properties verified removed
 - [ ] Uninstall works cleanly
