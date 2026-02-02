@@ -88,7 +88,7 @@ _files_cleaned=0
 
 # Clean /cache temporary files
 for _pattern in "/cache/build.prop.tmp" "/cache/pihooks_*" "/cache/pixelprops_*"; do
-    for _file in $_pattern 2>/dev/null; do
+    for _file in $_pattern; do
         if [ -f "$_file" ]; then
             rm -f "$_file" 2>/dev/null
             log "Removed: $_file"

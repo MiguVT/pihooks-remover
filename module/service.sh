@@ -159,7 +159,7 @@ _files_removed=0
 # This is safe - Android will recreate the database on next property write
 if [ -d "/data/property" ]; then
     # Find and remove files with pihooks/pixelprops in filename
-    for _file in /data/property/*pihooks* /data/property/*pixelprops* 2>/dev/null; do
+    for _file in /data/property/*pihooks* /data/property/*pixelprops*; do
         if [ -f "$_file" ]; then
             if rm -f "$_file" 2>/dev/null; then
                 log "Removed file: $_file"
