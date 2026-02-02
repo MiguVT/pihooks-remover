@@ -47,9 +47,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Android: 10+ (API 29+)
 - Tested on:
   - Nothing Phone 2 (Infinity-X)
-  - Pixel 7 Pro (Infinity-X)
-  - Pixel 6 (PixelOS)
-  - OnePlus 8T (crDroid)
 
 ---
 
