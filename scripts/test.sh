@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck shell=bash
 # PIHooks Remover - Local Test Script
 # Tests module scripts without Android environment
 # Run from repository root
