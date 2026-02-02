@@ -69,11 +69,13 @@ adb shell cat /data/local/tmp/pihooks_remover.log
 ## 🎮 Compatibility
 
 ### Tested ROMs
-| ROM | Device | Status |
-|-----|--------|--------|
-| Infinity-X | Nothing Phone 2 | ✅ Verified |
-| Infinity-X | Nothing Phone 3a | ✅ Verified |
-| Evolution-X UNOFFICIAL | Oneplus 5T | ✅ Verified |
+| ROM | Device | Status | Source |
+|-----|--------|--------|--------|
+| [Infinity-X](https://projectinfinity-x.com/downloads/Pong) | Nothing Phone 2 | ✅ Verified | Tested by MiguVT |
+| [Infinity-X](https://projectinfinity-x.com/downloads/asteroids) | Nothing Phone 3a | ✅ Verified | Tested by MiguVT |
+| Evolution-X* | Oneplus 5T | ✅ Verified | Tested by [MetroidvaniaListsGuy](https://www.reddit.com/r/androidroot/comments/1qt8n9z/comment/o37mm0x/) |
+
+\* Some tests has been tested using unofficial builds, they are marked with "*"
 
 ### Root Solutions
 | Solution | Status |
