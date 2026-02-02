@@ -5,7 +5,8 @@
 # POSIX-compliant, shellcheck-verified
 # Target: Android 14-16, KernelSU 0.9.0+, Infinity-X 3.5
 
-LOGFILE="/cache/pihooks_remover.log"
+# Use /data/local/tmp for logging - works on all devices including A/B
+LOGFILE="/data/local/tmp/pihooks_remover.log"
 BUILD_PROP="/system/build.prop"
 BACKUP_FILE="${BUILD_PROP}.bak"
 BACKUP_FILE_ALT="${BUILD_PROP}.pihooks_backup"
@@ -30,9 +31,10 @@ log "PIHooks Remover uninstall started"
 
 # ============================================================
 # STEP 1: Attempt to restore build.prop backup
-# Note: With Magic Mount approach, this is usually not needed
-# The overlay is automatically removed when module is uninstalled
-# But we try to restore anyway for completeness
+# NOTE: With current Magic Mount overlay approach, backups are
+#       not created. This code is retained for compatibility
+#       with older versions that used direct modification.
+#       The overlay is automatically removed when module is uninstalled.
 # ============================================================
 
 _restored=0
@@ -86,15 +88,13 @@ log "Cleaning up temporary files..."
 
 _files_cleaned=0
 
-# Clean /cache temporary files
-for _pattern in "/cache/build.prop.tmp" "/cache/pihooks_*" "/cache/pixelprops_*"; do
-    for _file in $_pattern; do
-        if [ -f "$_file" ]; then
-            rm -f "$_file" 2>/dev/null
-            log "Removed: $_file"
-            _files_cleaned="$((_files_cleaned + 1))"
-        fi
-    done
+# Clean temporary files from various locations
+for _file in /data/local/tmp/pihooks_* /data/local/tmp/pixelprops_* /cache/pihooks_* /cache/pixelprops_*; do
+    if [ -f "$_file" ]; then
+        rm -f "$_file" 2>/dev/null
+        log "Removed: $_file"
+        _files_cleaned=$((_files_cleaned + 1))
+    fi
 done
 
 log "Cleaned $_files_cleaned temporary files"

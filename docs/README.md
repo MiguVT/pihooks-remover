@@ -14,15 +14,25 @@
 - **Dual-Stage Execution**: Runs in `post-fs-data` (early boot) with `service.sh` fallback
 - **Multiple Remount Methods**: Tries direct, `/dev/block/mapper`, and bind mount approaches
 - **Runtime Cleanup**: Uses `resetprop -d` for complete runtime property removal
-- **Comprehensive Logging**: Logs to `/cache/pihooks_remover.log` and Android logcat
+- **Comprehensive Logging**: Logs to `/data/local/tmp/pihooks_remover.log` and Android logcat
 - **Idempotent**: Safe to run multiple times without side effects
 - **Fast Execution**: Completes in under 500ms
 
 ## 📋 Requirements
 
-- **Root**: KernelSU or Magisk
+- **Root**: KernelSU, Magisk, or APatch
 - **Android**: 10+ (API 29+)
 - **Architecture**: arm64-v8a, armeabi-v7a, x86_64
+
+### KernelSU Users
+For optimal performance with KernelSU:
+- **Recommended**: Install [meta-overlayfs](https://github.com/backslashxx/ksu-metamodule) metamodule
+- The module works without it, but `meta-overlayfs` provides cleaner OverlayFS integration
+- OverlayFS mode offers better performance and compatibility than traditional bind mounts
+
+### APatch Users
+- APatch support is **experimental** and currently untested
+- Please report compatibility issues on GitHub
 
 ## 🚀 Installation
 
@@ -58,7 +68,7 @@ adb shell getprop | grep -E "pihooks|pixelprops"
 # Should return empty
 
 # Check module log
-adb shell cat /cache/pihooks_remover.log
+adb shell cat /data/local/tmp/pihooks_remover.log
 
 # Check via Native Detector
 # Native Detector 7.6.1 should show "No root detected"
@@ -87,7 +97,7 @@ adb shell cat /cache/pihooks_remover.log
 
 1. **Check the log file:**
    ```bash
-   adb shell cat /cache/pihooks_remover.log
+   adb shell cat /data/local/tmp/pihooks_remover.log
    ```
 
 2. **Verify module is enabled:**
@@ -127,15 +137,15 @@ ROM updates may restore the properties. Simply:
 ## 📖 How It Works
 
 1. **post-fs-data.sh** (early boot):
-   - Attempts to remount `/system` as read-write
-   - Removes matching lines from `build.prop`
-   - Remounts as read-only
-   - Cleans runtime properties with `resetprop -d`
+   - Creates Magic Mount overlay with filtered build.prop files
+   - Removes all `pihooks` and `pixelprops` lines from prop files
+   - KernelSU/Magisk automatically mounts the overlay
 
 2. **service.sh** (boot_completed):
-   - Fallback cleanup for any remaining properties
-   - Retries up to 3 times with 1-second delays
-   - Catches properties that may have been set by system services
+   - Waits for `sys.boot_completed=1` (smart polling)
+   - Deletes runtime properties with `resetprop --delete`
+   - Cleans `/data/property/` files
+   - Verifies cleanup was successful
 
 See [TECHNICAL.md](TECHNICAL.md) for detailed implementation information.
 

@@ -70,7 +70,36 @@ Some scenarios where `post-fs-data.sh` may not fully succeed:
 
 ## Module Execution Stages
 
-### post-fs-data.sh
+### Execution Flow Overview
+
+```
+Boot Start
+    ↓
+post-fs-data.sh (Phase 1 - Early Boot)
+    ├─ Detect root solution (KernelSU/Magisk/APatch)
+    ├─ For each partition (/system, /vendor, /product, etc.):
+    │   ├─ Read build.prop
+    │   ├─ Filter out pihooks/pixelprops lines
+    │   └─ Write overlay to $MODDIR/system/build.prop
+    ├─ Runtime cleanup with resetprop --delete
+    └─ Verify and log results
+    ↓
+post-mount.sh (Phase 1.5 - KernelSU Only)
+    ├─ Runs after OverlayFS mount
+    ├─ Verify overlay is active
+    └─ Log verification status
+    ↓
+service.sh (Phase 2 - Boot Completed Fallback)
+    ├─ Wait for sys.boot_completed=1
+    ├─ Scan for any remaining properties
+    ├─ Delete with resetprop --delete
+    ├─ Clean /data/property/ files
+    └─ Final verification
+    ↓
+Boot Complete (Properties Removed)
+```
+
+### post-fs-data.sh (Overlay Approach)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -79,23 +108,19 @@ Some scenarios where `post-fs-data.sh` may not fully succeed:
 │                                                              │
 │  START                                                       │
 │    ↓                                                         │
-│  Initialize logging                                          │
+│  Initialize logging & timing                                 │
 │    ↓                                                         │
-│  Check root access                                           │
+│  Detect root solution (KernelSU/Magisk/APatch)              │
 │    ↓                                                         │
 │  ┌─────────────────────────────────────────────────────────┐│
-│  │ Try Remount Methods (in order):                         ││
-│  │  1. mount -o remount,rw /system                         ││
-│  │  2. mount -o remount,rw /dev/block/mapper/system        ││
-│  │  3. Direct block device remount                         ││
-│  │  4. Bind mount fallback                                 ││
+│  │ Create Magic Mount Overlay:                             ││
+│  │  1. Read each build.prop (/system, /vendor, etc.)       ││
+│  │  2. Filter out pihooks/pixelprops lines (grep -v)       ││
+│  │  3. Write filtered version to $MODDIR/system/...        ││
+│  │  4. Set permissions and SELinux context                 ││
 │  └─────────────────────────────────────────────────────────┘│
 │    ↓                                                         │
-│  If remount successful:                                      │
-│    → sed -i to remove properties from build.prop            │
-│    → Remount as read-only                                   │
-│    ↓                                                         │
-│  Clean runtime properties (resetprop -d)                    │
+│  Root solution mounts overlay automatically                 │
 │    ↓                                                         │
 │  Verify cleanup                                              │
 │    ↓                                                         │
