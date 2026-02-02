@@ -130,7 +130,9 @@ log "Property deletion complete: $_deleted deleted, $_not_found not found, $_fai
 log "Scanning for any remaining pihooks/pixelprops properties..."
 
 _discovered=0
-getprop 2>/dev/null | grep -E "pihooks|pixelprops" | while IFS='[]' read -r _ _prop _rest; do
+_tmpfile="/cache/pihooks_discovered_$$"
+getprop 2>/dev/null | grep -E "pihooks|pixelprops" > "$_tmpfile" 2>/dev/null || true
+while IFS='[]' read -r _ _prop _rest; do
     # Extract property name (format: [prop.name]: [value])
     _prop="$(echo "$_prop" | tr -d ' ')"
     [ -z "$_prop" ] && continue
@@ -139,7 +141,8 @@ getprop 2>/dev/null | grep -E "pihooks|pixelprops" | while IFS='[]' read -r _ _p
         log "DISCOVERED and DELETED: $_prop"
         _discovered="$((_discovered + 1))"
     fi
-done
+done < "$_tmpfile"
+rm -f "$_tmpfile" 2>/dev/null
 
 if [ "$_discovered" -gt 0 ]; then
     log "Discovered and deleted $_discovered additional properties"
