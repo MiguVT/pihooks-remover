@@ -72,15 +72,13 @@ adb shell cat /data/local/tmp/pihooks_remover.log
 | ROM | Device | Status |
 |-----|--------|--------|
 | Infinity-X | Nothing Phone 2 | ✅ Verified |
-| Infinity-X | Pixel 7 Pro | ✅ Verified |
-| PixelOS | Pixel 6 | ✅ Verified |
-| crDroid | OnePlus 8T | ✅ Verified |
+| Infinity-X | Nothing Phone 3a | ✅ Verified |
 
 ### Root Solutions
 | Solution | Status |
 |----------|--------|
 | KernelSU | ✅ Full Support |
-| Magisk | ✅ Full Support |
+| Magisk | 🔄 Untested |
 | APatch | 🔄 Untested |
 
 ## 🔧 Troubleshooting
