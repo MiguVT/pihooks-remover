@@ -20,16 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Initial release
-- `post-fs-data.sh` for early boot property removal
-- `service.sh` fallback for boot_completed stage
-- Multiple remount methods (direct, /dev/block/mapper, bind mount)
-- Runtime property cleanup using `resetprop -d`
-- Comprehensive logging to `/cache/pihooks_remover.log`
-- Logcat integration with `PIHooksRemover` tag
+- `service.sh` for property cleanup at boot_completed stage
+- `customize.sh` for installation with root solution detection
+- Runtime property cleanup using `resetprop --delete`
+- Dynamic property discovery (catches unlisted properties)
+- `/data/property/` file cleanup for persistence prevention
+- Comprehensive logging to `/data/local/tmp/pihooks_remover.log`
 - Log rotation (100KB max)
 - Execution time tracking
-- Exit codes (0=success, 1=partial, 2=fail)
-- `uninstall.sh` for clean removal with backup restoration
+- Exit codes (0=success, 1=partial, 2=resetprop missing)
+- `uninstall.sh` for clean removal
 - GitHub Actions CI/CD pipeline
   - Automated releases on tag push
   - ShellCheck linting
@@ -41,9 +41,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Changelog (CHANGELOG.md)
 - MIT License
 
+### Architecture
+- Single-stage execution (boot_completed only)
+- No system partition modifications
+- No overlay/mount dependencies
+- Universal compatibility (KernelSU, Magisk, APatch)
+
 ### Compatibility
 - KernelSU: Full support
 - Magisk: Full support
+- APatch: Experimental support
 - Android: 10+ (API 29+)
 - Tested on:
   - Nothing Phone 2 (Infinity-X)

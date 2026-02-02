@@ -106,7 +106,7 @@ jobs:
           unzip -l "$ZIP_FILE"
           
           # Validate required files exist in ZIP
-          for file in module.prop post-fs-data.sh service.sh; do
+          for file in module.prop customize.sh service.sh; do
             if ! unzip -l "$ZIP_FILE" | grep -q "$file"; then
               echo "::error::Missing required file in ZIP: $file"
               exit 1

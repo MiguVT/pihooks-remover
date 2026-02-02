@@ -197,24 +197,20 @@ We use `#!/system/bin/sh` and POSIX-compliant syntax because:
 
 ```bash
 log() {
-    _level="$1"
-    shift
-    _msg="$*"
-    _timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+    _timestamp="$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "unknown")"
+    _msg="[$_timestamp] [service] $*"
     
-    # File logging
-    echo "[$_timestamp] [$_level] $_msg" >> "$LOGFILE"
-    
-    # Logcat (if available)
-    log -t "$LOGCAT_TAG" -p "${_level:0:1}" "$_msg"
+    # Ensure log directory exists
+    mkdir -p "$(dirname "$LOGFILE")" 2>/dev/null
+    echo "$_msg" >> "$LOGFILE" 2>/dev/null
 }
 ```
 
 Benefits:
-- Persistent log file for debugging
-- Logcat integration for real-time monitoring
+- Persistent log file for debugging (`/data/local/tmp/pihooks_remover.log`)
 - Timestamp for issue correlation
-- Log rotation prevents disk fill
+- Log rotation prevents disk fill (100KB max)
+- Graceful fallback if logging fails
 
 ### Exit Codes
 
@@ -240,52 +236,54 @@ The scripts are safe to run multiple times:
 ```bash
 # Check command exists before use
 if ! command -v resetprop >/dev/null 2>&1; then
-    log_warn "resetprop not available"
-    return 1
+    log "ERROR: resetprop not found"
+    exit 2
 fi
 
-# Check file exists before modification
-if [ ! -f "$BUILD_PROP" ]; then
-    log_error "build.prop not found"
-    return 1
+# Check property exists before deletion
+_value="$(getprop "$_prop" 2>/dev/null)"
+if [ -n "$_value" ]; then
+    resetprop --delete "$_prop" 2>/dev/null
 fi
 
-# Capture and check exit codes
-if ! sed -i "/pattern/d" "$file" 2>/dev/null; then
-    log_error "sed failed"
+# Graceful file operations
+if [ -f "$_file" ]; then
+    rm -f "$_file" 2>/dev/null
 fi
 ```
 
 ### Graceful Degradation
 
-If primary method fails, we fall back:
+If primary method fails, we handle gracefully:
 
-1. Can't remount system? → Runtime cleanup only
+1. resetprop unavailable? → Exit with code 2, log error
 2. Can't write log file? → Continue silently
-3. resetprop unavailable? → Skip runtime cleanup
-4. Verification fails? → Report partial success
+3. Property doesn't exist? → Skip (already clean)
+4. Some deletions fail? → Report partial success (exit 1)
 
 ## Performance Considerations
 
 ### Execution Time Target: <500ms
 
 Optimizations:
-- Single `sed` command with multiple patterns
-- Minimal file I/O
-- No unnecessary loops
+- Direct property deletion via resetprop
+- Single-pass property scanning
+- No filesystem remounts
+- No overlay creation
 - Early exit when already clean
 
 ### Memory Usage
 
 - No large arrays
-- Stream processing where possible
-- Variables cleaned up
+- Stream processing for property discovery
+- Temporary files cleaned up immediately
 
 ### I/O Minimization
 
 - Single pass property deletion
 - Batched property operations
 - Log buffering (OS-level)
+- No system partition access
 
 ## Security Considerations
 
