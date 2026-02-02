@@ -41,7 +41,7 @@ validate_module() {
     
     local required_files=(
         "module.prop"
-        "post-fs-data.sh"
+        "customize.sh"
         "service.sh"
     )
     
@@ -93,7 +93,7 @@ build_module() {
     # Copy module files
     log_info "Copying module files..."
     cp "$MODULE_DIR/module.prop" "$BUILD_DIR/"
-    cp "$MODULE_DIR/post-fs-data.sh" "$BUILD_DIR/"
+    cp "$MODULE_DIR/customize.sh" "$BUILD_DIR/"
     cp "$MODULE_DIR/service.sh" "$BUILD_DIR/"
     
     # Copy uninstall.sh if exists

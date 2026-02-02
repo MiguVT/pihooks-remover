@@ -4,7 +4,7 @@
 # Run from repository root
 #
 # NOTE: This development script requires Bash (not POSIX sh)
-#       Module scripts (post-fs-data.sh, service.sh, etc.) remain
+#       Module scripts (customize.sh, service.sh, etc.) remain
 #       POSIX-compliant and use /system/bin/sh
 
 set -euo pipefail

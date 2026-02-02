@@ -31,7 +31,7 @@ jobs:
           
           REQUIRED_FILES=(
             "module/module.prop"
-            "module/post-fs-data.sh"
+            "module/customize.sh"
             "module/service.sh"
             "module/uninstall.sh"
             "scripts/build.sh"
@@ -175,7 +175,7 @@ jobs:
           unzip -l "$ZIP_FILE"
           
           # Verify critical files
-          REQUIRED_IN_ZIP=("module.prop" "post-fs-data.sh" "service.sh")
+          REQUIRED_IN_ZIP=("module.prop" "customize.sh" "service.sh")
           
           for file in "${REQUIRED_IN_ZIP[@]}"; do
             if ! unzip -l "$ZIP_FILE" | grep -q "$file"; then
