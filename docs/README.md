@@ -73,6 +73,7 @@ adb shell cat /data/local/tmp/pihooks_remover.log
 |-----|--------|--------|--------|
 | [Infinity-X](https://projectinfinity-x.com/downloads/Pong) | Nothing Phone 2 | ✅ Verified | Tested by MiguVT |
 | [Infinity-X](https://projectinfinity-x.com/downloads/asteroids) | Nothing Phone 3a | ✅ Verified | Tested by MiguVT |
+| [Evolution-X](https://evolution-x.org/devices/Pong) | Nothing Phone 2 | ✅ Verified | Tested by MiguVT |
 | Evolution-X* | Oneplus 5T | ✅ Verified | Tested by [MetroidvaniaListsGuy](https://www.reddit.com/r/androidroot/comments/1qt8n9z/comment/o37mm0x/) |
 
 \* Some tests has been tested using unofficial builds, they are marked with "*"
@@ -80,6 +81,8 @@ adb shell cat /data/local/tmp/pihooks_remover.log
 ### Root Solutions
 | Solution | Status |
 |----------|--------|
+| WKSU | ✅ Full Support |
+| KSU-Next | ✅ Full Support |
 | KernelSU | ✅ Full Support |
 | Magisk | 🔄 Untested |
 | APatch | 🔄 Untested |
